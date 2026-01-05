@@ -22,10 +22,14 @@ Raspberry Pi 5 Ontvangt data Visualiseert data via Node-RED dashboard
 🧩 Hardwarecomponenten
 Raspberry Pi 5
 <img width="366" height="259" alt="image" src="https://github.com/user-attachments/assets/0a55f759-8324-4f07-b0b9-3abde221550a" />
+
+
 Wordt gebruikt als centrale ontvanger en dashboardserver.
 
 ESP32 DevKit (AZ-Delivery)
 <img width="268" height="231" alt="image" src="https://github.com/user-attachments/assets/fccc729a-6ecc-4d0c-b167-f20e93b091ee" />
+
+
 Verantwoordelijk voor sensoruitlezing en LoRa-transmissie.
 LoRa Module – RFM95
 Zorgt voor langeafstand draadloze communicatie (868 MHz – EU).
@@ -33,6 +37,8 @@ Zorgt voor langeafstand draadloze communicatie (868 MHz – EU).
 🔌 Sensoren
 KY-038 – Geluidsensor
 <img width="429" height="350" alt="image" src="https://github.com/user-attachments/assets/17454238-536a-484b-8ae2-105b07e7dd8a" />
+
+
 Code – Geluidsmeting
 const int micPin = 34;  
 const int sampleWindow = 50; 
@@ -68,6 +74,8 @@ De decibelwaarde is een ruwe schatting, geschikt voor trendanalyse.
 
 KY-018 – Lichtsensor
 <img width="579" height="525" alt="image" src="https://github.com/user-attachments/assets/c5ce6d43-a6a0-4563-b2ba-f1f62a43a88e" />
+
+
 Code – Lichtmeting
 int raw = analogRead(KY018_PIN);
 
@@ -92,6 +100,8 @@ De KY-018 gebruikt een LDR (lichtafhankelijke weerstand) om omgevingslicht te me
 
 AM2301 (DHT21) – Temperatuur & Vochtigheid
 <img width="360" height="288" alt="image" src="https://github.com/user-attachments/assets/4832bde4-c909-46c8-9dbd-0ea7d887ca0a" />
+
+
 Code
 #define DHTPIN 4
 #define DHTTYPE DHT21
@@ -108,6 +118,8 @@ Meet luchtvochtigheid (%) en temperatuur (°C)
 
 MQ-5 – Gas-/Rooksensor
 <img width="398" height="303" alt="image" src="https://github.com/user-attachments/assets/3895584c-6f6f-4931-b5a0-306c2779c52f" />
+
+
 Code – Gasmeting
 #define MQ2_PIN 33
 const float GAS_VOLTAGE_MAX = 3.3;
