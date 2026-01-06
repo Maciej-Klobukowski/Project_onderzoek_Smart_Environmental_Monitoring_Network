@@ -49,6 +49,16 @@ diepontladen
 kortsluiting
 Hierdoor kan de batterij betrouwbaar en veilig worden gebruikt in het project.
 
+
+I2C_1602_LCD
+<img width="361" height="193" alt="image" src="https://github.com/user-attachments/assets/a29c7dc6-15b7-4e64-9e98-69ef5931c4f9" />
+
+De I2C 1602 LCD is een 16×2 karakterdisplay dat gebruikt wordt om meetgegevens lokaal weer te geven.
+Dankzij de I2C-interface zijn slechts twee datalijnen (SDA en SCL) nodig, wat het aantal benodigde GPIO-pinnen sterk vermindert.
+
+Het display wordt in dit project gebruikt om sensorwaarden en statusinformatie overzichtelijk te tonen op de Raspberry Pi 5.
+De I2C-aansluiting maakt het display eenvoudig te integreren en geschikt voor compacte en energiezuinige IoT-opstellingen.
+
 MT3608 2A Max DC-DC Step Up Power Module Booster Power Module 
 <img width="496" height="385" alt="image" src="https://github.com/user-attachments/assets/6293a112-5c56-48a5-a894-93619adabc0d" />
 
