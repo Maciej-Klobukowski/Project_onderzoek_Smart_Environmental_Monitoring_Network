@@ -1,165 +1,168 @@
-/*
-CONNECTIONS:
-
-to lora:
-SCK       -->    GPIO18
-MISO      -->    GPIO19
-MOSI      -->    GPIO23
-NSS(CS)   -->    GPIO5
-RESET     -->    GPIO14
-DIO0      -->    GPIO26
-
-to sensors:
-TEMPERATURE (YELLOW)    -->    GPIO4
-SOUND (A0)              -->    GPIO34
-LightSensor(S)          -->    GPIO32
-GasSensor(A0)           -->    GPIO33
-*/
-
-
-
 #include <Arduino.h>
 #include <SPI.h>
 #include <LoRa.h>
-#include "DHT.h" //for temp sensor
+#include "DHT.h"
+#include <math.h>
 
+// ============================================================
+//                      LoRa (ESP32) PINS
+// ============================================================
+#define SCK   18
+#define MISO  19
+#define MOSI  23
+#define SS    5
+#define RST   14
+#define DIO0  26
 
-// --- Pin definitions for ESP32 DevKit (AZ Delivery) ---
-#define SCK     18  // SPI Clock
-#define MISO    19  // SPI MISO
-#define MOSI    23  // SPI MOSI
-#define SS      5   // Chip Select (NSS)
-#define RST     14  // Reset
-#define DIO0    26  // IRQ (RX Done)
+#define LORA_FREQ 868E6  // EU: 868E6
 
-//For Temperature and Humidity Sensor
-#define DHTPIN 4        // GPIO 4 for DATA (yellow wire)
-#define DHTTYPE DHT21   // AM2301A uses the DHT21 protocol
+// ============================================================
+//                      SENSOR PINS (AANGEPAST)
+// ============================================================
+// Temperature/Humidity (DHT21) -> D4 (GPIO4)
+#define DHTPIN 4
+#define DHTTYPE DHT21
 DHT dht(DHTPIN, DHTTYPE);
 
-//For Decibel Measurement
-const int micPin = 34;  // analoge pin (A0 van KY-038)
-const int sampleWindow = 50; // tijdsvenster in ms voor meting
+// Sound sensor (A0) -> D26 (GPIO26)  [ADC1 OK]
+static constexpr int micPin = 26;
+static constexpr int sampleWindow = 50; // ms
 unsigned int sample;
 
-//For Light Sensor
-#define KY018_PIN 32 
+// Light sensor (S) -> D32 (GPIO32)   [ADC1 OK]
+#define KY018_PIN 32
 uint16_t rawMin = 4095, rawMax = 0;
 
-//For Gas Sensor
-#define MQ2_PIN 33   // Analog input pin (after voltage divider)
-const float GAS_VOLTAGE_MAX = 3.3;  // ESP32 ADC specs
-const int GAS_ADC_RES = 4095;
-float GAS_smoothValue = 0;    // Smoothing filter (better readings)
+// Gas sensor (A0) -> D13 (GPIO13)    [ADC2: OK zolang je geen WiFi gebruikt]
+#define MQ2_PIN 13
+static constexpr int GAS_ADC_RES = 4095;
+float GAS_smoothValue = 0.0f;
 
-// --- LoRa frequency (set to match your region) ---
-#define LORA_FREQ 868E6   // use 868E6 for EU, 433E6 for Asia
+// ============================================================
+//                      HELPERS
+// ============================================================
+static float clampf(float v, float lo, float hi) {
+  if (v < lo) return lo;
+  if (v > hi) return hi;
+  return v;
+}
 
-void setup() { //For LoRa communication!
+// ============================================================
+//                      SETUP
+// ============================================================
+void setup() {
   Serial.begin(115200);
-  while (!Serial);
+  delay(200);
+  Serial.println("\nESP32 LoRa Sender");
 
-  Serial.println("ESP32 LoRa Sender");
-  LoRa.setTxPower(20);
-  LoRa.setSpreadingFactor(12);
-  // Setup LoRa transceiver module
+  // ---- LoRa init ----
   SPI.begin(SCK, MISO, MOSI, SS);
   LoRa.setPins(SS, RST, DIO0);
 
+  LoRa.setTxPower(20);
+  LoRa.setSpreadingFactor(12);
+
   if (!LoRa.begin(LORA_FREQ)) {
     Serial.println("Starting LoRa failed! Check your connections.");
-    while (true);
+    while (true) { delay(1000); }
   }
-
   Serial.println("LoRa init succeeded!");
 
-  dht.begin(); //Tempsensor
-  
-//FOR LIGHTSENSOR  
-  analogSetWidth(12);
-  analogSetPinAttenuation(KY018_PIN, ADC_11db);
-  pinMode(KY018_PIN, INPUT);
+  // ---- Sensors init ----
+  dht.begin();
 
+  // ---- ADC setup ----
+  analogSetWidth(12);
+
+  // 11db gives ~0-3.3V range (best for typical analog sensors)
+  analogSetPinAttenuation(micPin, ADC_11db);
+  analogSetPinAttenuation(KY018_PIN, ADC_11db);
+  analogSetPinAttenuation(MQ2_PIN, ADC_11db);
+
+  pinMode(micPin, INPUT);
+  pinMode(KY018_PIN, INPUT);
+  pinMode(MQ2_PIN, INPUT);
 }
 
+// ============================================================
+//                      LOOP
+// ============================================================
 void loop() {
-//Code for Decibel Measurement:
-/////////////////////////////////////////////////////////////////////////////////////////////
+  // ------------------ SOUND (rough dB estimate) ------------------
   unsigned long startMillis = millis();
-  unsigned int peakToPeak = 0;
   unsigned int signalMax = 0;
   unsigned int signalMin = 4095;
 
-  // meet het signaal gedurende sampleWindow
-  while (millis() - startMillis < sampleWindow) {
+  while (millis() - startMillis < (unsigned long)sampleWindow) {
     sample = analogRead(micPin);
-    if (sample < 4095) { // geldig signaal
+    if (sample < 4095) {
       if (sample > signalMax) signalMax = sample;
-      else if (sample < signalMin) signalMin = sample;
+      if (sample < signalMin) signalMin = sample;
     }
   }
 
-  peakToPeak = signalMax - signalMin;  // verschil tussen max en min
-  double voltage = (peakToPeak * 3.3) / 4095.0; // omzetten naar spanning
-  if (voltage <= 0.001) voltage = 0.001;  // voorkom log10(0)
-  double dB = 20.0 * log10(voltage / 0.006);    // schatting in decibel (ruw)
+  unsigned int peakToPeak = signalMax - signalMin;
+  double voltage = (peakToPeak * 3.3) / 4095.0;
+  if (voltage <= 0.001) voltage = 0.001;     // avoid log10(0)
+  double dB = 20.0 * log10(voltage / 0.006); // rough calibration
 
-
-//Floats for temp sensor:
-/////////////////////////////////////////////////////////////////////////////////////////////
+  // ------------------ DHT (Temp/Humidity) ------------------
   float hum = dht.readHumidity();
   float temp = dht.readTemperature();
 
+  bool dhtOk = !(isnan(hum) || isnan(temp));
+  if (!dhtOk) {
+    Serial.println("DHT read failed!");
+  }
 
-//Code for Light Sensor:
-/////////////////////////////////////////////////////////////////////////////////////////////
+  // ------------------ LIGHT (0..100%) ------------------
   int raw = analogRead(KY018_PIN);
 
-  // Leer dynamisch min/max
   if (raw < rawMin) rawMin = raw;
   if (raw > rawMax) rawMax = raw;
 
-  // Bescherm tegen deling door 0
-  int span = max(1, rawMax - rawMin);
+  int span = max(1, (int)rawMax - (int)rawMin);
 
-  // Map naar 0..100 (kies omgekeerd of niet)
-  // Als bij jou meer licht -> lagere raw: gebruik inverted mapping:
-  float pct = (float)(rawMax - raw) * 100.0f / span;
+  // Inverted mapping (common with LDR modules: more light => lower ADC)
+  float lightPct = (float)(rawMax - raw) * 100.0f / (float)span;
+  lightPct = clampf(lightPct, 0.0f, 100.0f);
 
-  // (Als jouw bedrading ooit wordt omgedraaid, gebruik dan: (raw - rawMin) i.p.v. (rawMax - raw))
+  // ------------------ GAS (0..100%) ------------------
+  int GAS_raw = analogRead(MQ2_PIN);
+  GAS_smoothValue = (GAS_smoothValue * 0.8f) + ((float)GAS_raw * 0.2f);
 
-  // Optionele gain + clamp
-  pct *= 1.0f; // pas aan naar smaak
-  if (pct > 100.0f) pct = 100.0f;
-  if (pct < 0.0f)   pct = 0.0f;
+  float gasPct = (GAS_smoothValue / (float)GAS_ADC_RES) * 100.0f;
+  gasPct = clampf(gasPct, 0.0f, 100.0f);
 
+  // ------------------ PRINT ------------------
+  Serial.println("Sending packet:");
+  if (dhtOk) {
+    Serial.printf("  Temperature: %.2f C\n", temp);
+    Serial.printf("  Humidity: %.2f %%\n", hum);
+  } else {
+    Serial.println("  Temperature: NaN");
+    Serial.println("  Humidity: NaN");
+  }
+  Serial.printf("  Sound: %.2f dB\n", dB);
+  Serial.printf("  Light: %.2f %%\n", lightPct);
+  Serial.printf("  Gas: %.2f %%\n", gasPct);
 
-//Code for GAS sensor:
-/////////////////////////////////////////////////////////////////////////////////////////////
-int GAS_raw = analogRead(MQ2_PIN);    // Read raw ADC
-GAS_smoothValue = (GAS_smoothValue * 0.8) + (GAS_raw * 0.2);      // Simple low-pass filter (smooths noise)
-float GAS_percent = (GAS_smoothValue / GAS_ADC_RES) * 100.0;    // Convert to percentage 0–100%
-
-  if (GAS_percent > 100.0) GAS_percent = 100.0;   // Safety clamp
-  if (GAS_percent < 0.0)   GAS_percent = 0.0;
-
-//Code for all sensors / LoRa communication:
-/////////////////////////////////////////////////////////////////////////////////////////////
-  Serial.printf("Sending packet: Temperature: %.2f °C\n",temp);
-  Serial.printf("Sending packet: Humidity: %.2f %%\n",hum);
-  Serial.printf("Sending packet: Geluidsniveau: %.2f dB\n",dB);
-  Serial.printf("Sending packet: Light Value: %.2f\n",pct); 
-  Serial.printf("Sending packet: Gas Intensity: %.2f %%\n",GAS_percent);
-
-
+  // ------------------ SEND LoRa ------------------
   LoRa.beginPacket();
-  LoRa.printf("    \n");
-  LoRa.printf("    Temperature: %.2f °C\n",temp);
-  LoRa.printf("    Humidity: %.2f %%\n",hum);
-  LoRa.printf("    Geluidsniveau: %.2f dB\n",dB);
-  LoRa.printf("    Light Value: %.2f\n",pct); 
-  LoRa.printf("    Gas Intensity: %.2f %%\n",GAS_percent);
+
+  if (dhtOk) {
+    LoRa.printf("maciej_Temperature: %.2f C\n", temp);
+    LoRa.printf("maciej_Humidity: %.2f %%\n", hum);
+  } else {
+    LoRa.print("maciej_Temperature: NaN\n");
+    LoRa.print("maciej_Humidity: NaN\n");
+  }
+
+  LoRa.printf("maciej_Sound: %.2f dB\n", dB);
+  LoRa.printf("maciej_Light: %.2f %%\n", lightPct);
+  LoRa.printf("maciej_Gas: %.2f %%\n", gasPct);
+
   LoRa.endPacket();
 
-  delay(1000); // Send every second
+  delay(1000);
 }
